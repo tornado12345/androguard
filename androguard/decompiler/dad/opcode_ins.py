@@ -285,7 +285,7 @@ def constwide(ins, vmap):
 # const-wide/high16 vAA, #+BBBB000000000000 ( 8b, 16b )
 def constwidehigh16(ins, vmap):
     logger.debug('ConstWideHigh16 : %s', ins.get_output())
-    value = unpack('=d', '\x00\x00\x00\x00\x00\x00' + pack('=h', ins.BBBB))[0]
+    value = unpack('=d', b'\x00\x00\x00\x00\x00\x00' + pack('=h', ins.BBBB))[0]
     cst = Constant(value, 'D', ins.BBBB)
     return assign_const(ins.AA, cst, vmap)
 
@@ -543,7 +543,7 @@ def iflez(ins, vmap):
     return ConditionalZExpression(Op.LEQUAL, get_variables(vmap, ins.AA))
 
 
-#TODO: check type for all aget
+# TODO: check type for all aget
 # aget vAA, vBB, vCC ( 8b, 8b, 8b )
 def aget(ins, vmap):
     logger.debug('AGet : %s', ins.get_output())

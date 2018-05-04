@@ -10,7 +10,10 @@ from struct import unpack, pack
 import textwrap
 
 import json
-from .androconf import warning, error, CONF, enable_colors, remove_colors, save_colors, color_range
+from .androconf import CONF, enable_colors, remove_colors, save_colors, color_range
+import logging
+
+log = logging.getLogger("androguard.bytecode")
 
 
 def disable_print_colors():
@@ -25,12 +28,8 @@ def enable_print_colors(colors):
 
 # Handle exit message
 def Exit(msg):
-    warning("Error : " + msg)
-    raise ("oops")
-
-
-def Warning(msg):
-    warning(msg)
+    log.warning("Error : " + msg)
+    raise Exception("oops")
 
 
 def _PrintBanner():
@@ -40,7 +39,7 @@ def _PrintBanner():
 
 def _PrintSubBanner(title=None):
     print_fct = CONF["PRINT_FCT"]
-    if title == None:
+    if title is None:
         print_fct("#" * 20 + "\n")
     else:
         print_fct("#" * 10 + " " + title + "\n")
@@ -121,7 +120,7 @@ def PrettyShow(m_a, basic_blocks, notes={}):
 
     for i in basic_blocks:
         print_fct("%s%s%s : \n" % (bb_color, i.get_name(), normal_color))
-        instructions = i.get_instructions()
+        instructions = list(i.get_instructions())
         for ins in instructions:
             if nb in notes:
                 for note in notes[nb]:
@@ -177,36 +176,37 @@ def PrettyShow(m_a, basic_blocks, notes={}):
         print_fct("\n")
 
 
-def method2dot(mx, colors={}):
+def method2dot(mx, colors=None):
     """
-        Export analysis method to dot format
+    Export analysis method to dot format
 
-        @param mx : MethodAnalysis object
-        @param colors : MethodAnalysis object
+    :param mx: :class:`~androguard.core.analysis.analysis.MethodAnalysis`
+    :param colors: dict of colors to use, if colors is None the default colors are used
 
-        @rtype : dot format buffer (it is a subgraph (dict))
+    :returns: a string which contains the dot graph
     """
 
-    colors = colors or {
-        "true_branch": "green",
-        "false_branch": "red",
-        "default_branch": "purple",
-        "jump_branch": "blue",
-        "bg_idx": "lightgray",
-        "idx": "blue",
-        "bg_start_idx": "yellow",
-        "bg_instruction": "lightgray",
-        "instruction_name": "black",
-        "instructions_operands": "yellow",
-        "raw": "red",
-        "string": "red",
-        "literal": "green",
-        "offset": "#4000FF",
-        "method": "#DF3A01",
-        "field": "#088A08",
-        "type": "#0000FF",
-        "registers_range": ("#999933", "#6666FF")
-    }
+    if not colors:
+        colors = {
+            "true_branch": "green",
+            "false_branch": "red",
+            "default_branch": "purple",
+            "jump_branch": "blue",
+            "bg_idx": "lightgray",
+            "idx": "blue",
+            "bg_start_idx": "yellow",
+            "bg_instruction": "lightgray",
+            "instruction_name": "black",
+            "instructions_operands": "yellow",
+            "raw": "red",
+            "string": "red",
+            "literal": "green",
+            "offset": "#4000FF",
+            "method": "#DF3A01",
+            "field": "#088A08",
+            "type": "#0000FF",
+            "registers_range": ("#999933", "#6666FF")
+        }
 
     node_tpl = "\nstruct_%s [label=<\n<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"3\">\n%s</TABLE>>];\n"
     label_tpl = "<TR><TD ALIGN=\"LEFT\" BGCOLOR=\"%s\"> <FONT FACE=\"Times-Bold\" color=\"%s\">%x</FONT> </TD><TD ALIGN=\"LEFT\" BGCOLOR=\"%s\"> <FONT FACE=\"Times-Bold\" color=\"%s\">%s </FONT> %s </TD></TR>\n"
@@ -216,15 +216,14 @@ def method2dot(mx, colors={}):
     blocks_html = ""
 
     method = mx.get_method()
-    sha256 = hashlib.sha256("%s%s%s" % (
+    sha256 = hashlib.sha256(bytearray("%s%s%s" % (
         mx.get_method().get_class_name(), mx.get_method().get_name(),
-        mx.get_method().get_descriptor())).hexdigest()
+        mx.get_method().get_descriptor()), "UTF-8")).hexdigest()
 
     registers = {}
     if method.get_code():
         for DVMBasicMethodBlock in mx.basic_blocks.gets():
-            for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions(
-            ):
+            for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions():
                 operands = DVMBasicMethodBlockInstruction.get_operands(0)
                 for register in operands:
                     if register[0] == 0:
@@ -245,22 +244,18 @@ def method2dot(mx, colors={}):
 
     for DVMBasicMethodBlock in mx.basic_blocks.gets():
         ins_idx = DVMBasicMethodBlock.start
-        block_id = hashlib.md5(sha256 + DVMBasicMethodBlock.get_name(
-        )).hexdigest()
+        block_id = hashlib.md5(bytearray(sha256 + DVMBasicMethodBlock.get_name(), "UTF-8")).hexdigest()
 
         content = link_tpl % 'header'
 
-        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions(
-        ):
+        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions():
             if DVMBasicMethodBlockInstruction.get_op_value(
             ) == 0x2b or DVMBasicMethodBlockInstruction.get_op_value() == 0x2c:
                 new_links.append((DVMBasicMethodBlock, ins_idx,
-                                  DVMBasicMethodBlockInstruction.get_ref_off(
-                                  ) * 2 + ins_idx))
+                                  DVMBasicMethodBlockInstruction.get_ref_off() * 2 + ins_idx))
             elif DVMBasicMethodBlockInstruction.get_op_value() == 0x26:
                 new_links.append((DVMBasicMethodBlock, ins_idx,
-                                  DVMBasicMethodBlockInstruction.get_ref_off(
-                                  ) * 2 + ins_idx))
+                                  DVMBasicMethodBlockInstruction.get_ref_off() * 2 + ins_idx))
 
             operands = DVMBasicMethodBlockInstruction.get_operands(ins_idx)
             output = ", ".join(mx.get_vm().get_operand_html(
@@ -312,7 +307,7 @@ def method2dot(mx, colors={}):
                 label_edge = values.pop(0)
 
             child_id = hashlib.md5(
-                sha256 + DVMBasicMethodBlockChild[-1].get_name()).hexdigest()
+                bytearray(sha256 + DVMBasicMethodBlockChild[-1].get_name(), "UTF-8")).hexdigest()
             edges_html += "struct_%s:tail -> struct_%s:header  [color=\"%s\", label=\"%s\"];\n" % (
                 block_id, child_id, val, label_edge)
             # color switch
@@ -327,7 +322,7 @@ def method2dot(mx, colors={}):
                 exception_block = exception_elem[-1]
                 if exception_block:
                     exception_id = hashlib.md5(
-                        sha256 + exception_block.get_name()).hexdigest()
+                        bytearray(sha256 + exception_block.get_name(), "UTF-8")).hexdigest()
                     edges_html += "struct_%s:tail -> struct_%s:header  [color=\"%s\", label=\"%s\"];\n" % (
                         block_id, exception_id, "black", exception_elem[0])
 
@@ -336,10 +331,10 @@ def method2dot(mx, colors={}):
         DVMBasicMethodBlockChild = mx.basic_blocks.get_basic_block(link[2])
 
         if DVMBasicMethodBlockChild:
-            block_id = hashlib.md5(sha256 + DVMBasicMethodBlock.get_name(
-            )).hexdigest()
-            child_id = hashlib.md5(sha256 + DVMBasicMethodBlockChild.get_name(
-            )).hexdigest()
+            block_id = hashlib.md5(bytearray(sha256 + DVMBasicMethodBlock.get_name(
+            ), "UTF-8")).hexdigest()
+            child_id = hashlib.md5(bytearray(sha256 + DVMBasicMethodBlockChild.get_name(
+            ), "UTF-8")).hexdigest()
 
             edges_html += "struct_%s:tail -> struct_%s:header  [color=\"%s\", label=\"data(0x%x) to @0x%x\", style=\"dashed\"];\n" % (
                 block_id, child_id, "yellow", link[1], link[2])
@@ -362,17 +357,15 @@ def method2dot(mx, colors={}):
 
 def method2format(output, _format="png", mx=None, raw=None):
     """
-        Export method to a specific file format
+    Export method to a specific file format
 
-        @param output : output filename
-        @param _format : format type (png, jpg ...) (default : png)
-        @param mx : specify the MethodAnalysis object
-        @param raw : use directly a dot raw buffer if None
+    @param output : output filename
+    @param _format : format type (png, jpg ...) (default : png)
+    @param mx : specify the MethodAnalysis object
+    @param raw : use directly a dot raw buffer if None
     """
-    try:
-        import pydot
-    except ImportError:
-        error("module pydot not found")
+    # pydot is optional!
+    import pydot
 
     buff = "digraph {\n"
     buff += "graph [rankdir=TB]\n"
@@ -384,8 +377,9 @@ def method2format(output, _format="png", mx=None, raw=None):
         data = method2dot(mx)
 
     # subgraphs cluster
-    buff += "subgraph cluster_" + hashlib.md5(output).hexdigest(
-    ) + " {\nlabel=\"%s\"\n" % data['name']
+    buff += "subgraph cluster_{} ".format(hashlib.md5(bytearray(output, "UTF-8")).hexdigest())
+    buff += "{\n"
+    buff += "label=\"{}\"\n".format(data['name'])
     buff += data['nodes']
     buff += "}\n"
 
@@ -395,22 +389,23 @@ def method2format(output, _format="png", mx=None, raw=None):
 
     d = pydot.graph_from_dot_data(buff)
     if d:
-        getattr(d, "write_" + _format.lower())(output)
+        for g in d:
+            getattr(g, "write_" + _format.lower())(output)
 
 
 def method2png(output, mx, raw=False):
     """
-        Export method to a png file format
+    Export method to a png file format
 
-        :param output: output filename
-        :type output: string
-        :param mx: specify the MethodAnalysis object
-        :type mx: :class:`MethodAnalysis` object
-        :param raw: use directly a dot raw buffer
-        :type raw: string
+    :param output: output filename
+    :type output: string
+    :param mx: specify the MethodAnalysis object
+    :type mx: :class:`MethodAnalysis` object
+    :param raw: use directly a dot raw buffer
+    :type raw: string
     """
     buff = raw
-    if raw == False:
+    if not raw:
         buff = method2dot(mx)
 
     method2format(output, "png", mx, buff)
@@ -418,36 +413,36 @@ def method2png(output, mx, raw=False):
 
 def method2jpg(output, mx, raw=False):
     """
-        Export method to a jpg file format
+    Export method to a jpg file format
 
-        :param output: output filename
-        :type output: string
-        :param mx: specify the MethodAnalysis object
-        :type mx: :class:`MethodAnalysis` object
-        :param raw: use directly a dot raw buffer (optional)
-        :type raw: string
+    :param output: output filename
+    :type output: string
+    :param mx: specify the MethodAnalysis object
+    :type mx: :class:`MethodAnalysis` object
+    :param raw: use directly a dot raw buffer (optional)
+    :type raw: string
     """
     buff = raw
-    if raw == False:
+    if not raw:
         buff = method2dot(mx)
 
     method2format(output, "jpg", mx, buff)
 
 
 def vm2json(vm):
-    d = {}
-    d["name"] = "root"
-    d["children"] = []
+    """
+    Get a JSON representation of a DEX file
+
+    :param vm: :class:`~androguard.core.bytecodes.dvm.DalvikVMFormat`
+    :return:
+    """
+    d = {"name": "root", "children": []}
 
     for _class in vm.get_classes():
-        c_class = {}
-        c_class["name"] = _class.get_name()
-        c_class["children"] = []
+        c_class = {"name": _class.get_name(), "children": []}
 
         for method in _class.get_methods():
-            c_method = {}
-            c_method["name"] = method.get_name()
-            c_method["children"] = []
+            c_method = {"name": method.get_name(), "children": []}
 
             c_class["children"].append(c_method)
 
@@ -466,31 +461,37 @@ class TmpBlock(object):
 
 
 def method2json(mx, directed_graph=False):
+    """
+    Create directed or undirected graph in the json format.
+
+    :param mx: :class:`~androguard.core.analysis.analysis.MethodAnalysis`
+    :param directed_graph: True if a directed graph should be created (default: False)
+    :return:
+    """
     if directed_graph:
         return method2json_direct(mx)
     return method2json_undirect(mx)
 
 
 def method2json_undirect(mx):
+    """
+
+    :param mx: :class:`~androguard.core.analysis.analysis.MethodAnalysis`
+    :return:
+    """
     d = {}
     reports = []
     d["reports"] = reports
 
     for DVMBasicMethodBlock in mx.basic_blocks.gets():
-        cblock = {}
-
-        cblock["BasicBlockId"] = DVMBasicMethodBlock.get_name()
-        cblock["registers"] = mx.get_method().get_code().get_registers_size()
-        cblock["instructions"] = []
+        cblock = {"BasicBlockId": DVMBasicMethodBlock.get_name(),
+                  "registers": mx.get_method().get_code().get_registers_size(), "instructions": []}
 
         ins_idx = DVMBasicMethodBlock.start
-        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions(
-        ):
-            c_ins = {}
-            c_ins["idx"] = ins_idx
-            c_ins["name"] = DVMBasicMethodBlockInstruction.get_name()
-            c_ins["operands"] = DVMBasicMethodBlockInstruction.get_operands(
-                ins_idx)
+        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions():
+            c_ins = {"idx": ins_idx, "name": DVMBasicMethodBlockInstruction.get_name(),
+                     "operands": DVMBasicMethodBlockInstruction.get_operands(
+                         ins_idx)}
 
             cblock["instructions"].append(c_ins)
             ins_idx += DVMBasicMethodBlockInstruction.get_length()
@@ -505,6 +506,11 @@ def method2json_undirect(mx):
 
 
 def method2json_direct(mx):
+    """
+
+    :param mx: :class:`~androguard.core.analysis.analysis.MethodAnalysis`
+    :return:
+    """
     d = {}
     reports = []
     d["reports"] = reports
@@ -513,23 +519,18 @@ def method2json_direct(mx):
 
     l = []
     for DVMBasicMethodBlock in mx.basic_blocks.gets():
-        for index, DVMBasicMethodBlockChild in enumerate(
-            DVMBasicMethodBlock.childs):
-            if DVMBasicMethodBlock.get_name(
-            ) == DVMBasicMethodBlockChild[-1].get_name():
+        for index, DVMBasicMethodBlockChild in enumerate(DVMBasicMethodBlock.childs):
+            if DVMBasicMethodBlock.get_name() == DVMBasicMethodBlockChild[-1].get_name():
 
                 preblock = TmpBlock(DVMBasicMethodBlock.get_name() + "-pre")
 
-                cnblock = {}
-                cnblock["BasicBlockId"] = DVMBasicMethodBlock.get_name(
-                ) + "-pre"
-                cnblock["start"] = DVMBasicMethodBlock.start
-                cnblock["notes"] = []
-
-                cnblock["Edge"] = [DVMBasicMethodBlock.get_name()]
-                cnblock["registers"] = 0
-                cnblock["instructions"] = []
-                cnblock["info_bb"] = 0
+                cnblock = {"BasicBlockId": DVMBasicMethodBlock.get_name() + "-pre",
+                           "start": DVMBasicMethodBlock.start,
+                           "notes": [],
+                           "Edge": [DVMBasicMethodBlock.get_name()],
+                           "registers": 0,
+                           "instructions": [],
+                           "info_bb": 0}
 
                 l.append(cnblock)
 
@@ -543,27 +544,19 @@ def method2json_direct(mx):
                             hooks[parent[-1].get_name()].append(child[-1])
 
     for DVMBasicMethodBlock in mx.basic_blocks.gets():
-        cblock = {}
-
-        cblock["BasicBlockId"] = DVMBasicMethodBlock.get_name()
-        cblock["start"] = DVMBasicMethodBlock.start
-        cblock["notes"] = DVMBasicMethodBlock.get_notes()
-
-        cblock["registers"] = mx.get_method().get_code().get_registers_size()
-        cblock["instructions"] = []
+        cblock = {"BasicBlockId": DVMBasicMethodBlock.get_name(),
+                  "start": DVMBasicMethodBlock.start,
+                  "notes": DVMBasicMethodBlock.get_notes(),
+                  "registers": mx.get_method().get_code().get_registers_size(),
+                  "instructions": []}
 
         ins_idx = DVMBasicMethodBlock.start
         last_instru = None
-        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions(
-        ):
-            c_ins = {}
-            c_ins["idx"] = ins_idx
-            c_ins["name"] = DVMBasicMethodBlockInstruction.get_name()
-            c_ins["operands"] = DVMBasicMethodBlockInstruction.get_operands(
-                ins_idx)
-
-            c_ins["formatted_operands"
-                 ] = DVMBasicMethodBlockInstruction.get_formatted_operands()
+        for DVMBasicMethodBlockInstruction in DVMBasicMethodBlock.get_instructions():
+            c_ins = {"idx": ins_idx,
+                     "name": DVMBasicMethodBlockInstruction.get_name(),
+                     "operands": DVMBasicMethodBlockInstruction.get_operands(ins_idx),
+                     "formatted_operands": DVMBasicMethodBlockInstruction.get_formatted_operands()}
 
             cblock["instructions"].append(c_ins)
 
@@ -588,12 +581,9 @@ def method2json_direct(mx):
         for DVMBasicMethodBlockChild in DVMBasicMethodBlock.childs:
             ok = False
             if DVMBasicMethodBlock.get_name() in hooks:
-                if DVMBasicMethodBlockChild[-1] in hooks[
-                    DVMBasicMethodBlock.get_name()
-                ]:
+                if DVMBasicMethodBlockChild[-1] in hooks[DVMBasicMethodBlock.get_name()]:
                     ok = True
-                    cblock["Edge"].append(hooks[DVMBasicMethodBlock.get_name(
-                    )][0].get_name())
+                    cblock["Edge"].append(hooks[DVMBasicMethodBlock.get_name()][0].get_name())
 
             if not ok:
                 cblock["Edge"].append(DVMBasicMethodBlockChild[-1].get_name())
@@ -674,12 +664,11 @@ def object_to_bytes(obj):
         return bytearray()
     elif isinstance(obj, int):
         return pack("<L", obj)
-    elif obj == None:
+    elif obj is None:
         return bytearray()
     elif isinstance(obj, bytearray):
         return obj
     else:
-        #print type(obj), obj
         return obj.get_raw()
 
 
@@ -724,7 +713,7 @@ class BuffHandle(object):
         return buff
 
     def end(self):
-        return self.__idx == len(self.__buff)
+        return self.__idx >= len(self.__buff)
 
 
 class Buff(object):
@@ -741,6 +730,12 @@ class _Bytecode(object):
     def __init__(self, buff):
         self.__buff = bytearray(buff)
         self.__idx = 0
+
+    def __getitem__(self, item):
+        return self.__buff[item]
+
+    def __len__(self):
+        return len(self.__buff)
 
     def read(self, size):
         if isinstance(size, SV):
@@ -787,34 +782,34 @@ class _Bytecode(object):
             fd.write(buff)
 
 
-def FormatClassToJava(input):
+def FormatClassToJava(i):
     """
-       Transoform a typical xml format class into java format
+       Transform a typical xml format class into java format
 
-       :param input: the input class name
+       :param i: the input class name
        :rtype: string
     """
-    return "L" + input.replace(".", "/") + ";"
+    return "L" + i.replace(".", "/") + ";"
 
 
-def FormatClassToPython(input):
-    i = input[:-1]
+def FormatClassToPython(i):
+    i = i[:-1]
     i = i.replace("/", "_")
     i = i.replace("$", "_")
 
     return i
 
 
-def FormatNameToPython(input):
-    i = input.replace("<", "")
+def FormatNameToPython(i):
+    i = i.replace("<", "")
     i = i.replace(">", "")
     i = i.replace("$", "_")
 
     return i
 
 
-def FormatDescriptorToPython(input):
-    i = input.replace("/", "_")
+def FormatDescriptorToPython(i):
+    i = i.replace("/", "_")
     i = i.replace(";", "")
     i = i.replace("[", "")
     i = i.replace("(", "")
