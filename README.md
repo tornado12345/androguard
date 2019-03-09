@@ -1,3 +1,5 @@
+![banner](https://raw.githubusercontent.com/androguard/androguard/master/assets/CI/banner.png)
+
 # Androguard
 
 [![Build Status](https://travis-ci.org/androguard/androguard.svg?branch=master)](https://travis-ci.org/androguard/androguard)
@@ -39,7 +41,9 @@ In alphabetical order
 * [AndroPyTool](https://github.com/alexMyG/AndroPyTool)
 * [AppKnox](http://appknox.com)
 * [Cuckoo Sandbox](https://cuckoosandbox.org)
+* [Deckard](https://github.com/hrkfdn/deckard)
 * [Droidbot](https://github.com/honeynet/droidbot)
+* [Droidstatx](https://github.com/integrity-sa/droidstatx)
 * [εxodus](https://github.com/Exodus-Privacy/exodus)
 * [F-Droid Server](https://gitlab.com/fdroid/fdroidserver)
 * [gplaycli](https://github.com/matlink/gplaycli)
