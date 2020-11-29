@@ -17,6 +17,7 @@
 
 import logging
 from struct import unpack
+from androguard.core import mutf8
 from androguard.decompiler.dad.util import get_type
 from androguard.decompiler.dad.opcode_ins import Op
 from androguard.decompiler.dad.instruction import (
@@ -48,7 +49,7 @@ class Writer:
         self.need_break = True
 
     def __str__(self):
-        return ''.join(self.buffer)
+        return ''.join([str(i) for i in self.buffer])
 
     def str_ext(self):
         return self.buffer2
@@ -671,13 +672,17 @@ class Writer:
         if isinstance(arg, BinaryCompExpression):
             arg.op = op
             return arg.visit(self)
-        atype = arg.get_type()
+        atype = str(arg.get_type())
         if atype == 'Z':
             if op == Op.EQUAL:
                 self.write('!', data="NEGATE")
             arg.visit(self)
         else:
             arg.visit(self)
+            try:
+                atype = atype.string
+            except AttributeError:
+                pass
             if atype in 'VBSCIJFD':
                 self.write(' %s 0' % op, data="TODO64")
             else:

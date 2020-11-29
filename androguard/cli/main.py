@@ -138,7 +138,6 @@ def plot(cg):
 
     :param cg: A networkx call graph to plot
     """
-    from androguard.core.analysis.analysis import ExternalMethod
     import matplotlib.pyplot as plt
     import networkx as nx
     pos = nx.spring_layout(cg)
@@ -146,19 +145,16 @@ def plot(cg):
     internal = []
     external = []
 
-    for n in cg.node:
-        if isinstance(n, ExternalMethod):
+    for n in cg.nodes:
+        if n.is_external():
             external.append(n)
         else:
             internal.append(n)
 
     nx.draw_networkx_nodes(cg, pos=pos, node_color='r', nodelist=internal)
     nx.draw_networkx_nodes(cg, pos=pos, node_color='b', nodelist=external)
-    nx.draw_networkx_edges(cg, pos, arrow=True)
-    nx.draw_networkx_labels(cg, pos=pos,
-                            labels={x: "{} {}".format(x.get_class_name(),
-                                                      x.get_name())
-                                    for x in cg.edge})
+    nx.draw_networkx_edges(cg, pos, arrows=True)
+    nx.draw_networkx_labels(cg, pos=pos, labels={x: "{}{}".format(x.class_name, x.name) for x in cg.nodes})
     plt.draw()
     plt.show()
 
@@ -240,7 +236,7 @@ def export_apps_to_format(filename,
                     continue
 
             # Current Folder to write to
-            filename_class = valid_class_name(method.get_class_name())
+            filename_class = valid_class_name(str(method.get_class_name()))
             filename_class = os.path.join(output, filename_class)
             create_directory(filename_class)
 
@@ -257,10 +253,10 @@ def export_apps_to_format(filename,
                 method2format(filename + "." + form, form, None, buff)
 
             # Write the Java file for the whole class
-            if method.get_class_name() not in dump_classes:
+            if str(method.get_class_name()) not in dump_classes:
                 print("source codes ...", end=' ')
                 current_class = vm.get_class(method.get_class_name())
-                current_filename_class = valid_class_name(current_class.get_name())
+                current_filename_class = valid_class_name(str(current_class.get_name()))
 
                 current_filename_class = os.path.join(output, current_filename_class + ".java")
                 with open(current_filename_class, "w") as fd:
@@ -329,7 +325,6 @@ def androlyze_main(session, filename):
     from androguard.core.androconf import ANDROGUARD_VERSION, CONF
     from IPython.terminal.embed import InteractiveShellEmbed
     from traitlets.config import Config
-    from androguard.misc import init_print_colors
     from androguard.session import Session, Load
     from colorama import Fore
     import colorama
@@ -339,6 +334,7 @@ def androlyze_main(session, filename):
     from androguard.core.bytecodes.apk import APK
     from androguard.core.bytecodes.dvm import DalvikVMFormat
     from androguard.core.analysis.analysis import Analysis
+    from androguard.misc import AnalyzeAPK
 
     colorama.init()
 
@@ -415,7 +411,6 @@ def androlyze_main(session, filename):
     ipshell = InteractiveShellEmbed(config=cfg, banner1="{} started"
                                     .format(_version_string))
     atexit.register(shutdown_hook)
-    init_print_colors()
     ipshell()
 
 
@@ -490,7 +485,6 @@ def androsign_main(args_apk, args_hash, args_all, show):
                     except ValueError as ve:
                         # RSA pkey does not have an hash algorithm
                         pass
-                
                 print()
 
 
@@ -508,6 +502,18 @@ def androdis_main(offset, size, dex):
     with open(dex, "rb") as fp:
         buf = fp.read()
     d = dvm.DalvikVMFormat(buf)
+
+    if size == 0 and offset == 0:
+        # Assume you want to just get a disassembly of all classes and methods
+        for cls in d.get_classes():
+            print("# CLASS: {}".format(cls.get_name()))
+            for m in cls.get_methods():
+                print("## METHOD: {} {} {}".format(m.get_access_flags_string(), m.get_name(), m.get_descriptor()))
+                for idx, ins in m.get_instructions_idx():
+                    print('{:08x}  {}'.format(idx, ins.disasm()))
+
+                print()
+            print()
 
     if size == 0:
         size = len(buf)

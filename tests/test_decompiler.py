@@ -35,7 +35,12 @@ def dvmethod(c, dx, doAST=False):
         mx = dx.get_method(m)
         ms = DvMethod(mx)
         ms.process(doAST=doAST)
-        assert ms.get_source() is not None
+        if doAST:
+            assert ms.get_ast() is not None
+            assert isinstance(ms.get_ast(), dict)
+            assert 'body' in ms.get_ast()
+        else:
+            assert ms.get_source() is not None
 
 def dvclass(c, dx):
     dc = DvClass(c, dx)
@@ -43,11 +48,12 @@ def dvclass(c, dx):
 
     assert dc.get_source() is not None
 
+
 def test_all_decompiler():
     # Generate test cases for this APK:
     a, d, dx = AnalyzeAPK("examples/tests/hello-world.apk")
     for c in d[0].get_classes():
-        test_name = re.sub("[^a-zA-Z0-9_]", "_", c.get_name()[1:-1])
+        test_name = re.sub("[^a-zA-Z0-9_]", "_", str(c.get_name())[1:-1])
         # Test the decompilation of a single class
         # disable for now, as testing all DvMethods has the same effect as
         # testing all DvClasses.
@@ -62,7 +68,8 @@ def test_all_decompiler():
 
         yield dvmethod, c, dx, False
         # Disable tests for doAST=True for now...
-        # yield dvmethod, c, dx, True
+        yield dvmethod, c, dx, True
+
 
 if __name__ == '__main__':
     unittest.main()

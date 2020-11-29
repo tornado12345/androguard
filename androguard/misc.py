@@ -9,19 +9,16 @@ from androguard.core.bytecodes.dvm import DalvikVMFormat
 from androguard.core.analysis.analysis import Analysis
 
 import logging
+import warnings
 log = logging.getLogger("androguard.misc")
-
-
-def init_print_colors():
-    from IPython.utils import coloransi, io
-    androconf.default_colors(coloransi.TermColors)
-    androconf.CONF["PRINT_FCT"] = io.stdout.write
 
 
 def get_default_session():
     """
     Return the default Session from the configuration
     or create a new one, if the session in the configuration is None.
+
+    :rtype: androguard.session.Session
     """
     if androconf.CONF["SESSION"] is None:
         androconf.CONF["SESSION"] = Session()
@@ -77,13 +74,14 @@ def AnalyzeAPK(_file, session=None, raw=False):
         return a, d, dx
 
 
-def AnalyzeDex(filename, session=None):
+def AnalyzeDex(filename, session=None, raw=False):
     """
     Analyze an android dex file and setup all stuff for a more quickly analysis !
 
     :param filename: the filename of the android dex file or a buffer which represents the dex file
     :type filename: string
     :param session: A session (Default None)
+    :param raw: If set, ``filename`` will be used as the odex's data (bytes). Defaults to ``False``
 
     :rtype: return a tuple of (sha256hash, :class:`DalvikVMFormat`, :class:`Analysis`)
     """
@@ -92,19 +90,23 @@ def AnalyzeDex(filename, session=None):
     if not session:
         session = get_default_session()
 
-    with open(filename, "rb") as fd:
-        data = fd.read()
+    if raw:
+        data = filename
+    else:
+        with open(filename, "rb") as fd:
+            data = fd.read()
 
     return session.addDEX(filename, data)
 
 
-def AnalyzeODex(filename, session=None):
+def AnalyzeODex(filename, session=None, raw=False):
     """
     Analyze an android odex file and setup all stuff for a more quickly analysis !
 
     :param filename: the filename of the android dex file or a buffer which represents the dex file
     :type filename: string
     :param session: The Androguard Session to add the ODex to (default: None)
+    :param raw: If set, ``filename`` will be used as the odex's data (bytes). Defaults to ``False``
 
     :rtype: return a tuple of (sha256hash, :class:`DalvikOdexVMFormat`, :class:`Analysis`)
     """
@@ -113,8 +115,11 @@ def AnalyzeODex(filename, session=None):
     if not session:
         session = get_default_session()
 
-    with open(filename, "rb") as fd:
-        data = fd.read()
+    if raw:
+        data = filename
+    else:
+        with open(filename, "rb") as fd:
+            data = fd.read()
 
     return session.addDEY(filename, data)
 
@@ -163,10 +168,15 @@ def sign_apk(filename, keystore, storepass):
     """
     Use jarsigner to sign an APK file.
 
+
+    .. deprecated:: 3.4.0
+        dont use this function! Use apksigner directly
+
     :param filename: APK file on disk to sign (path)
     :param keystore: path to keystore
     :param storepass: your keystorage passphrase
     """
+    warnings.warn("deprecated, this method will be removed!", DeprecationWarning)
     from subprocess import Popen, PIPE, STDOUT
     # TODO use apksigner instead of jarsigner
     cmd = Popen([androconf.CONF["BIN_JARSIGNER"], "-sigalg", "MD5withRSA",
@@ -207,16 +217,22 @@ def clean_file_name(filename, unique=True, replace="_", force_nt=False):
     # Do not end with dot or space
     fname = re.sub(r'[ .]$', replace, fname)
 
-    if force_nt or os.name == 'nt':
-        PATH_MAX_LENGTH = 230  # give extra space for other stuff...
-        # Check filename length limit, usually a problem on older Windows versions
-        if len(fname) > PATH_MAX_LENGTH:
-            if "." in fname:
-                f, ext = fname.rsplit(".", 1)
-                fname = "{}.{}".format(f[:PATH_MAX_LENGTH-(len(ext)+1)], ext)
-            else:
-                fname = fname[:PATH_MAX_LENGTH]
+    # It is a sensible default, to assume that there is a hard 255 char limit per filename
+    # See https://en.wikipedia.org/wiki/Comparison_of_file_systems
+    # If you are using a filesystem with less, you have other problems ;)
+    #
+    # We simply make a hard cut after 255 chars. To leave some space for an extension, which might get added later,
+    # There is room for improvement here, so feel free to implement a better method!
+    PATH_MAX_LENGTH = 230  # give extra space for other stuff...
+    # Check filename length limit, usually a problem on older Windows versions
+    if len(fname) > PATH_MAX_LENGTH:
+        if "." in fname:
+            f, ext = fname.rsplit(".", 1)
+            fname = "{}.{}".format(f[:PATH_MAX_LENGTH-(len(ext)+1)], ext)
+        else:
+            fname = fname[:PATH_MAX_LENGTH]
 
+    if force_nt or os.name == 'nt':
         # Special behaviour... On Windows, there is also a problem with the maximum path length in explorer.exe
         # maximum length is limited to 260 chars, so use 250 to have room for other stuff
         if len(os.path.abspath(os.path.join(path, fname))) > 250:
